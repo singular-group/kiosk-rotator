@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+    <link rel="stylesheet" href="overlay.css">
+  </head>
+  <body>
+    <div id="bar">
+      <button id="prev" title="Previous">
+        <svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg>
+      </button>
+      <button id="pause" title="Pause">
+        <svg id="icon-pause" viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+        <svg id="icon-play" viewBox="0 0 24 24" hidden><path d="M7 5v14l12-7z"/></svg>
+      </button>
+      <button id="next" title="Next">
+        <svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg>
+      </button>
+      <div id="info">
+        <div id="line">
+          <span id="position"></span>
+          <span id="title"></span>
+          <span id="remaining"></span>
+        </div>
+        <div id="track"><div id="progress"></div></div>
+      </div>
+    </div>
+    <script src="overlay.js"></script>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "items": [
+    { "url": "https://example.com/", "seconds": 15 },
+    { "url": "https://www.wikipedia.org/", "seconds": 10 }
+  ]
+}

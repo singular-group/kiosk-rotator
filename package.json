@@ -1,0 +1,25 @@
+{
+  "name": "kiosk-rotator",
+  "version": "0.1.0",
+  "description": "Full-screen kiosk that rotates a list of web pages, each shown for its own time.",
+  "main": "src/main.js",
+  "license": "MIT",
+  "author": "Hugo Freire Gil",
+  "repository": "github:TLmaK0/kiosk-rotator",
+  "keywords": [
+    "kiosk",
+    "dashboard",
+    "videowall",
+    "electron",
+    "rotator"
+  ],
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "package": "electron-packager . kiosk-rotator --platform=linux --arch=x64 --out=out --overwrite --no-prune --ignore=^/node_modules --ignore=^/test --ignore=^/out --ignore=^/examples --ignore=^/\\.github --ignore=^/\\.gitignore"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "45.2.3"
+  }
+}
