@@ -14,7 +14,7 @@ another, each for its own number of seconds.
 - The display is kept from sleeping, and muted videos autoplay.
 
 Built on [Electron](https://www.electronjs.org/). Linux x64 builds are on the
-[releases page](https://github.com/TLmaK0/kiosk-rotator/releases).
+[releases page](https://github.com/singular-group/kiosk-rotator/releases).
 
 ## Configuration
 
