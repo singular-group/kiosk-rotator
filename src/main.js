@@ -3,8 +3,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { app, BaseWindow, WebContentsView, ipcMain, powerSaveBlocker, screen } = require('electron');
-const { configPath, parseConfig } = require('./config');
+const { configPath, parseConfig, parseItems, replaceItems } = require('./config');
 const { Rotation } = require('./rotation');
+const { createWebServer } = require('./web');
 
 const OVERLAY_HEIGHT = 72;
 const OVERLAY_IDLE_MS = 5000;
@@ -17,14 +18,24 @@ const log = (msg) => console.log(`kiosk-rotator: ${msg}`);
 // Muted videos may start on their own; the screen has nobody to click "play".
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
-function loadItems() {
-  const file = configPath(process.argv, process.env);
+const CONFIG_FILE = configPath(process.argv, process.env);
+
+function loadConfig() {
   try {
-    return parseConfig(fs.readFileSync(file, 'utf8'));
+    return parseConfig(fs.readFileSync(CONFIG_FILE, 'utf8'));
   } catch (err) {
-    console.error(`kiosk-rotator: ${file}: ${err.message}`);
+    console.error(`kiosk-rotator: ${CONFIG_FILE}: ${err.message}`);
     process.exit(1);
   }
+}
+
+// Replaces the items in the config file, keeping the rest of it; written to a
+// temporary file and renamed, so a crash never leaves half a file.
+function storeItems(items) {
+  const text = replaceItems(fs.readFileSync(CONFIG_FILE, 'utf8'), items);
+  const tmp = `${CONFIG_FILE}.tmp`;
+  fs.writeFileSync(tmp, text, { mode: fs.statSync(CONFIG_FILE).mode });
+  fs.renameSync(tmp, CONFIG_FILE);
 }
 
 // One view per item, all loaded up front, so switching is instant and pages
@@ -53,6 +64,7 @@ function createPage(item) {
     log(`${item.url}: renderer gone (${details.reason}), reloading`);
     reloadIn(CRASH_RELOAD_MS);
   });
+  wc.on('destroyed', () => clearTimeout(retry));
   wc.on('unresponsive', () => {
     log(`${item.url}: unresponsive, restarting its renderer`);
     wc.forcefullyCrashRenderer();
@@ -62,7 +74,7 @@ function createPage(item) {
   return view;
 }
 
-function start(items) {
+function start({ items, web }) {
   powerSaveBlocker.start('prevent-display-sleep');
 
   // Mutter ignores kiosk/fullscreen requested before the window is mapped, so
@@ -79,18 +91,14 @@ function start(items) {
   });
   win.once('show', () => setTimeout(() => win.setKiosk(true), 500));
 
-  const pages = items.map((item) => {
-    const view = createPage(item);
-    win.contentView.addChildView(view);
-    return view;
-  });
+  let pages = [];
+  let rotation;
 
   const overlay = new WebContentsView({
     webPreferences: { preload: path.join(__dirname, 'preload.js') },
   });
   overlay.setBackgroundColor('#00000000');
   overlay.webContents.loadFile(path.join(__dirname, 'overlay.html'));
-  win.contentView.addChildView(overlay); // added last: drawn on top
   overlay.setVisible(false);
 
   const layout = () => {
@@ -99,12 +107,43 @@ function start(items) {
     overlay.setBounds({ x: 0, y: height - OVERLAY_HEIGHT, width, height: OVERLAY_HEIGHT });
   };
   win.on('resize', layout);
-  layout();
+
+  const show = () => pages.forEach((view, i) => view.setVisible(i === rotation.index));
+
+  // A page whose URL is still in the new list keeps its view, so it is not
+  // reloaded; the rotation starts over at the first item.
+  const setItems = (list) => {
+    const old = pages.map((view, i) => ({ view, url: items[i] && items[i].url }));
+    pages = list.map((item) => {
+      const kept = old.findIndex((o) => o.url === item.url);
+      return kept >= 0 ? old.splice(kept, 1)[0].view : createPage(item);
+    });
+    for (const { view } of old) {
+      win.contentView.removeChildView(view);
+      view.webContents.close();
+    }
+    items = list;
+    for (const view of pages) win.contentView.addChildView(view); // re-adding moves to the top
+    win.contentView.addChildView(overlay); // last: drawn over the pages
+    rotation = new Rotation(items, Date.now());
+    layout();
+    show();
+  };
+  setItems(items);
   win.show();
 
-  const rotation = new Rotation(items, Date.now());
-  const show = () => pages.forEach((view, i) => view.setVisible(i === rotation.index));
-  show();
+  createWebServer({
+    web,
+    getItems: () => items,
+    saveItems: (list) => {
+      const valid = parseItems(list);
+      storeItems(valid);
+      setItems(valid);
+      log(`rotating ${valid.length} page(s), set from the web page`);
+    },
+  })
+    .on('error', (err) => log(`web page on ${web.listen}:${web.port}: ${err.message}`))
+    .listen(web.port, web.listen, () => log(`web page on http://${web.listen}:${web.port}/`));
 
   // The pages swallow mouse events, so cursor movement is polled instead: the
   // control bar shows while the mouse moves and while the rotation is paused.
@@ -149,8 +188,8 @@ function start(items) {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  const items = loadItems();
-  log(`rotating ${items.length} page(s)`);
+  const config = loadConfig();
+  log(`rotating ${config.items.length} page(s)`);
   app.on('window-all-closed', () => app.quit());
-  app.whenReady().then(() => start(items));
+  app.whenReady().then(() => start(config));
 }

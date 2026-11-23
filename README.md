@@ -30,9 +30,50 @@ A JSON file with the pages and their seconds:
 ```
 
 It is read from `--config=<file>`, else `$KIOSK_ROTATOR_CONFIG`, else
-`~/.config/kiosk-rotator/config.json`. The file is read once at start; restart
-the app to apply changes. An invalid file makes the app exit with a message
-naming the offending field.
+`~/.config/kiosk-rotator/config.json`. The file is read at start; edits made to
+it by hand apply on the next start. An invalid file makes the app exit with a
+message naming the offending field.
+
+### The web page
+
+The app serves a page to edit the list: add, remove and reorder pages and
+change their seconds. Saving applies the list at once — pages still in it keep
+running without a reload — and writes it back to the config file, so the file
+must be writable by the app. Only `items` is rewritten; everything else in the
+file stays as it is.
+
+By default it listens on **`http://127.0.0.1:8080/`**, user **`admin`**,
+password **`kiosk-rotator`**. Change them in the file's `web` section; any
+field left out keeps its default:
+
+```json
+{
+  "items": [ … ],
+  "web": {
+    "listen": "0.0.0.0",
+    "port": 8080,
+    "user": "admin",
+    "passwordHash": "scrypt$…"
+  }
+}
+```
+
+`passwordHash` is printed by `hash-password.js`, which reads the password from
+standard input. From a release:
+
+```sh
+printf %s 'new password' | ELECTRON_RUN_AS_NODE=1 \
+  ./kiosk-rotator-linux-x64/kiosk-rotator \
+  kiosk-rotator-linux-x64/resources/app.asar/src/hash-password.js
+```
+
+From a checkout: `printf %s 'new password' | node src/hash-password.js`.
+Restart the app after changing `web`.
+
+The page is plain HTTP with Basic authentication: on any `listen` other than
+`127.0.0.1` the password crosses the network in clear, and whoever has it
+decides which pages the screen loads — weigh that against running with
+`--no-sandbox` (see *Running*).
 
 Cookies and site data persist in `~/.config/kiosk-rotator`, so a page you log
 into once stays logged in.
@@ -46,8 +87,8 @@ tar xzf kiosk-rotator-<version>-linux-x64.tar.gz
 
 On Ubuntu 23.10 and later, AppArmor blocks the unprivileged user namespaces
 Chromium's sandbox needs. Either install an AppArmor profile for the binary
-(needs root) or add `--no-sandbox`; the latter is reasonable when the URL list
-is your own.
+(needs root) or add `--no-sandbox`; the latter is reasonable when only you
+decide the URL list — that is, when nobody else can reach the web page.
 
 As a systemd user service that starts with the desktop session:
 

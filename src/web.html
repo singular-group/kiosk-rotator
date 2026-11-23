@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kiosk-rotator</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1d1d1f; --bg: #f5f5f7; --card: #fff; --line: #d2d2d7; --muted: #6e6e73; --accent: #0a66d8; --bad: #c62828; --good: #2e7d32; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #f5f5f7; --bg: #111; --card: #1c1c1e; --line: #38383a; --muted: #98989d; --accent: #4c9bff; --bad: #ff6b6b; --good: #5fd068; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px 16px; font: 15px/1.4 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+  main { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p.lead { margin: 0 0 20px; color: var(--muted); }
+  .row { display: grid; grid-template-columns: 32px 1fr 96px auto; gap: 8px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-bottom: 8px; }
+  .n { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  input { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; font: inherit; }
+  input[type=number] { text-align: right; }
+  .tools { display: flex; gap: 4px; }
+  button { padding: 7px 11px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: inherit; font: inherit; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .head { display: grid; grid-template-columns: 32px 1fr 96px auto; gap: 8px; padding: 0 9px 4px; color: var(--muted); font-size: 13px; }
+  .actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+  #status { margin-left: 4px; }
+  #status.bad { color: var(--bad); }
+  #status.good { color: var(--good); }
+  @media (max-width: 600px) {
+    .row, .head { grid-template-columns: 24px 1fr 72px; }
+    .tools { grid-column: 2 / -1; }
+    .head span:last-child { display: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>kiosk-rotator</h1>
+  <p class="lead">The pages the screen rotates through, in order, each for its seconds. Saving applies the list at once.</p>
+  <div class="head"><span></span><span>URL</span><span>Seconds</span><span></span></div>
+  <div id="rows"></div>
+  <div class="actions">
+    <button id="add">Add page</button>
+    <button id="save" class="primary">Save</button>
+    <button id="revert">Discard changes</button>
+    <span id="status" role="status"></span>
+  </div>
+</main>
+<template id="row">
+  <div class="row">
+    <span class="n"></span>
+    <input class="url" type="url" placeholder="https://…" required>
+    <input class="seconds" type="number" min="1" step="1" required>
+    <span class="tools">
+      <button class="up" title="Move up" aria-label="Move up">↑</button>
+      <button class="down" title="Move down" aria-label="Move down">↓</button>
+      <button class="remove" title="Remove" aria-label="Remove">✕</button>
+    </span>
+  </div>
+</template>
+<script>
+  const rows = document.getElementById('rows');
+  const template = document.getElementById('row');
+  const status = document.getElementById('status');
+  let items = [];
+  // Built without the page's own credentials: fetch refuses a URL carrying them.
+  const api = new URL('api/items', location.origin + location.pathname).href;
+
+  const setStatus = (text, kind = '') => { status.textContent = text; status.className = kind; };
+
+  function read() {
+    return [...rows.children].map((row) => ({
+      url: row.querySelector('.url').value.trim(),
+      seconds: Number(row.querySelector('.seconds').value),
+    }));
+  }
+
+  function render(list) {
+    rows.replaceChildren();
+    list.forEach((item, i) => {
+      const row = template.content.firstElementChild.cloneNode(true);
+      row.querySelector('.n').textContent = i + 1;
+      row.querySelector('.url').value = item.url;
+      row.querySelector('.seconds').value = item.seconds;
+      row.querySelector('.up').disabled = i === 0;
+      row.querySelector('.down').disabled = i === list.length - 1;
+      row.querySelector('.remove').disabled = list.length === 1;
+      const move = (to) => { const l = read(); l.splice(to, 0, l.splice(i, 1)[0]); render(l); setStatus('Not saved'); };
+      row.querySelector('.up').onclick = () => move(i - 1);
+      row.querySelector('.down').onclick = () => move(i + 1);
+      row.querySelector('.remove').onclick = () => { const l = read(); l.splice(i, 1); render(l); setStatus('Not saved'); };
+      rows.append(row);
+    });
+  }
+
+  rows.addEventListener('input', () => setStatus('Not saved'));
+  document.getElementById('add').onclick = () => {
+    render([...read(), { url: '', seconds: 30 }]);
+    rows.lastElementChild.querySelector('.url').focus();
+    setStatus('Not saved');
+  };
+  document.getElementById('revert').onclick = () => { render(items); setStatus(''); };
+  document.getElementById('save').onclick = async () => {
+    setStatus('Saving…');
+    try {
+      const res = await fetch(api, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: read() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      items = data.items;
+      render(items);
+      setStatus('Saved and applied', 'good');
+    } catch (err) {
+      setStatus(`Not saved: ${err.message}`, 'bad');
+    }
+  };
+
+  fetch(api)
+    .then((res) => res.json())
+    .then((data) => { items = data.items; render(items); })
+    .catch((err) => setStatus(`Could not load the list: ${err.message}`, 'bad'));
+</script>
+</body>
+</html>

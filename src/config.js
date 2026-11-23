@@ -14,17 +14,28 @@ function configPath(argv, env) {
   return env.KIOSK_ROTATOR_CONFIG || DEFAULT_CONFIG;
 }
 
-function parseConfig(text) {
-  let data;
+// The config web page, unless the file's "web" section says otherwise. The
+// default password is "kiosk-rotator" (see the README).
+const DEFAULT_WEB = {
+  listen: '127.0.0.1',
+  port: 8080,
+  user: 'admin',
+  passwordHash: 'scrypt$gvRckiea8GPhaaMT7eQWnA==$VdafwAUYHkOywz1PXGNJnoFbTFV0k7wzfs34vMIC0uo=',
+};
+
+function parseJson(text) {
   try {
-    data = JSON.parse(text);
+    return JSON.parse(text);
   } catch (err) {
     throw new Error(`not valid JSON: ${err.message}`);
   }
-  if (!data || !Array.isArray(data.items) || data.items.length === 0) {
+}
+
+function parseItems(list) {
+  if (!Array.isArray(list) || list.length === 0) {
     throw new Error('"items" must be a non-empty list');
   }
-  return data.items.map((item, i) => {
+  return list.map((item, i) => {
     const where = `items[${i}]`;
     if (!item || typeof item !== 'object') throw new Error(`${where} must be an object`);
     let url;
@@ -43,4 +54,30 @@ function parseConfig(text) {
   });
 }
 
-module.exports = { DEFAULT_CONFIG, configPath, parseConfig };
+function parseWeb(section) {
+  if (section === undefined) return { ...DEFAULT_WEB };
+  if (!section || typeof section !== 'object') throw new Error('"web" must be an object');
+  const web = { ...DEFAULT_WEB, ...section };
+  if (typeof web.listen !== 'string' || !web.listen) throw new Error('web.listen must be an address');
+  if (!Number.isInteger(web.port) || web.port < 1 || web.port > 65535) {
+    throw new Error('web.port must be a port number');
+  }
+  if (typeof web.user !== 'string' || !web.user) throw new Error('web.user must be a non-empty string');
+  if (typeof web.passwordHash !== 'string' || !web.passwordHash.startsWith('scrypt$')) {
+    throw new Error('web.passwordHash must be a hash from hash-password.js');
+  }
+  return { listen: web.listen, port: web.port, user: web.user, passwordHash: web.passwordHash };
+}
+
+function parseConfig(text) {
+  const data = parseJson(text);
+  if (!data || typeof data !== 'object') throw new Error('"items" must be a non-empty list');
+  return { items: parseItems(data.items), web: parseWeb(data.web) };
+}
+
+// The file's text with its items replaced, everything else in it kept.
+function replaceItems(text, items) {
+  return `${JSON.stringify({ ...parseJson(text), items }, null, 2)}\n`;
+}
+
+module.exports = { DEFAULT_CONFIG, DEFAULT_WEB, configPath, parseItems, parseConfig, replaceItems };
