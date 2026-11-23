@@ -5,7 +5,7 @@
   "main": "src/main.js",
   "license": "MIT",
   "author": "Hugo Freire Gil",
-  "repository": "github:TLmaK0/kiosk-rotator",
+  "repository": "github:singular-group/kiosk-rotator",
   "keywords": [
     "kiosk",
     "dashboard",
