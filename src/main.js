@@ -65,15 +65,19 @@ function createPage(item) {
 function start(items) {
   powerSaveBlocker.start('prevent-display-sleep');
 
-  // Sized to the screen up front too: kiosk mode alone relies on a window
-  // manager honouring it.
+  // Mutter ignores kiosk/fullscreen requested before the window is mapped, so
+  // it is set again once shown; an undecorated window the size of the monitor
+  // is also treated as full screen by it.
   const win = new BaseWindow({
     ...screen.getPrimaryDisplay().bounds,
+    show: false,
+    frame: false,
     kiosk: true,
     backgroundColor: '#000000',
     autoHideMenuBar: true,
     title: 'kiosk-rotator',
   });
+  win.once('show', () => setTimeout(() => win.setKiosk(true), 500));
 
   const pages = items.map((item) => {
     const view = createPage(item);
@@ -96,6 +100,7 @@ function start(items) {
   };
   win.on('resize', layout);
   layout();
+  win.show();
 
   const rotation = new Rotation(items, Date.now());
   const show = () => pages.forEach((view, i) => view.setVisible(i === rotation.index));
