@@ -8,6 +8,7 @@ const { Rotation } = require('./rotation');
 const { createWebServer } = require('./web');
 
 const OVERLAY_HEIGHT = 72;
+const SCREENSHOT_WIDTH = 960;
 const OVERLAY_IDLE_MS = 5000;
 const TICK_MS = 250;
 const RETRY_MS = 30000;
@@ -132,6 +133,35 @@ function start({ items, web }) {
   setItems(items);
   win.show();
 
+  const state = (now) => ({
+    index: rotation.index,
+    count: items.length,
+    title: pages[rotation.index].webContents.getTitle(),
+    url: items[rotation.index].url,
+    remainingMs: rotation.remainingMs(now),
+    durationMs: rotation.durationMs(),
+    paused: rotation.paused,
+  });
+
+  // The pages swallow mouse events, so cursor movement is polled instead: the
+  // control bar shows while the mouse moves and while the rotation is paused.
+  let lastCursor = null;
+  let lastMove = 0;
+
+  // From the control bar and from the web page; either one brings the bar up.
+  const command = (name) => {
+    const now = Date.now();
+    if (name === 'next') rotation.go(1, now);
+    else if (name === 'prev') rotation.go(-1, now);
+    else if (name === 'pause') rotation.togglePause(now);
+    else return;
+    lastMove = now;
+    show();
+  };
+  ipcMain.on('command', (event, name) => {
+    if (event.sender === overlay.webContents) command(name);
+  });
+
   createWebServer({
     web,
     getItems: () => items,
@@ -141,25 +171,18 @@ function start({ items, web }) {
       setItems(valid);
       log(`rotating ${valid.length} page(s), set from the web page`);
     },
+    getState: () => state(Date.now()),
+    // The page on screen, without the control bar; scaled down, since the web
+    // page polls it every second.
+    screenshot: async () => {
+      const image = await pages[rotation.index].webContents.capturePage();
+      const { width } = image.getSize();
+      return (width > SCREENSHOT_WIDTH ? image.resize({ width: SCREENSHOT_WIDTH }) : image).toJPEG(70);
+    },
+    command,
   })
     .on('error', (err) => log(`web page on ${web.listen}:${web.port}: ${err.message}`))
     .listen(web.port, web.listen, () => log(`web page on http://${web.listen}:${web.port}/`));
-
-  // The pages swallow mouse events, so cursor movement is polled instead: the
-  // control bar shows while the mouse moves and while the rotation is paused.
-  let lastCursor = null;
-  let lastMove = 0;
-
-  ipcMain.on('command', (event, name) => {
-    if (event.sender !== overlay.webContents) return;
-    const now = Date.now();
-    if (name === 'next') rotation.go(1, now);
-    else if (name === 'prev') rotation.go(-1, now);
-    else if (name === 'pause') rotation.togglePause(now);
-    else return;
-    lastMove = now;
-    show();
-  });
 
   setInterval(() => {
     const now = Date.now();
@@ -172,16 +195,7 @@ function start({ items, web }) {
     overlay.setVisible(visible);
     if (!visible) return;
 
-    const page = pages[rotation.index].webContents;
-    overlay.webContents.send('state', {
-      index: rotation.index,
-      count: items.length,
-      title: page.getTitle(),
-      url: items[rotation.index].url,
-      remainingMs: rotation.remainingMs(now),
-      durationMs: rotation.durationMs(),
-      paused: rotation.paused,
-    });
+    overlay.webContents.send('state', state(now));
   }, TICK_MS);
 }
 

@@ -25,6 +25,15 @@
   .head { display: grid; grid-template-columns: 32px 1fr 96px auto; gap: 8px; padding: 0 9px 4px; color: var(--muted); font-size: 13px; }
   .actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
   #status { margin-left: 4px; }
+  .now { display: flex; gap: 12px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 24px; }
+  .now .controls { display: flex; gap: 4px; }
+  .now .controls button { min-width: 44px; font-size: 17px; }
+  .now .what { min-width: 0; flex: 1; }
+  .now .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .now .meta { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .now .meta.bad { color: var(--bad); }
+  .screen { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; border-radius: 8px 8px 0 0; border: 1px solid var(--line); border-bottom: 0; }
+  .screen + .now { border-radius: 0 0 8px 8px; }
   #status.bad { color: var(--bad); }
   #status.good { color: var(--good); }
   @media (max-width: 600px) {
@@ -37,6 +46,18 @@
 <body>
 <main>
   <h1>kiosk-rotator</h1>
+  <img class="screen" id="screen" alt="What the screen shows">
+  <section class="now" aria-label="On screen">
+    <span class="controls">
+      <button id="prev" title="Previous page" aria-label="Previous page">⏮</button>
+      <button id="pause" title="Pause" aria-label="Pause">⏸</button>
+      <button id="next" title="Next page" aria-label="Next page">⏭</button>
+    </span>
+    <div class="what">
+      <div class="title" id="now-title"></div>
+      <div class="meta" id="now-meta" role="status"></div>
+    </div>
+  </section>
   <p class="lead">The pages the screen rotates through, in order, each for its seconds. Saving applies the list at once.</p>
   <div class="head"><span></span><span>URL</span><span>Seconds</span><span></span></div>
   <div id="rows"></div>
@@ -65,7 +86,11 @@
   const status = document.getElementById('status');
   let items = [];
   // Built without the page's own credentials: fetch refuses a URL carrying them.
-  const api = new URL('api/items', location.origin + location.pathname).href;
+  const base = location.origin + location.pathname;
+  const api = new URL('api/items', base).href;
+  const stateApi = new URL('api/state', base).href;
+  const commandApi = new URL('api/command', base).href;
+  const screenApi = new URL('api/screen.jpg', base).href;
 
   const setStatus = (text, kind = '') => { status.textContent = text; status.className = kind; };
 
@@ -114,10 +139,56 @@
       items = data.items;
       render(items);
       setStatus('Saved and applied', 'good');
+      refresh();
     } catch (err) {
       setStatus(`Not saved: ${err.message}`, 'bad');
     }
   };
+
+  const nowTitle = document.getElementById('now-title');
+  const nowMeta = document.getElementById('now-meta');
+  const pauseButton = document.getElementById('pause');
+
+  function showState(st) {
+    nowTitle.textContent = st.title || st.url;
+    nowTitle.title = st.url;
+    const left = Math.ceil(st.remainingMs / 1000);
+    nowMeta.textContent = `${st.index + 1} of ${st.count} · ${st.paused ? `paused, ${left}s left` : `${left}s left`}`;
+    nowMeta.className = 'meta';
+    pauseButton.textContent = st.paused ? '▶' : '⏸';
+    pauseButton.title = pauseButton.ariaLabel = st.paused ? 'Resume' : 'Pause';
+  }
+  const stateFailed = (err) => { nowMeta.textContent = `Screen not reachable: ${err.message}`; nowMeta.className = 'meta bad'; };
+
+  async function call(url, init) {
+    const res = await fetch(url, init);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  }
+  // The next shot is fetched into a detached image and swapped in once loaded,
+  // so the view never flashes empty; a shot still loading is not requested again.
+  const screenView = document.getElementById('screen');
+  let shooting = false;
+  function refreshScreen() {
+    if (shooting || document.hidden) return;
+    shooting = true;
+    const next = new Image();
+    next.onload = () => { screenView.src = next.src; shooting = false; };
+    next.onerror = () => { shooting = false; };
+    next.src = `${screenApi}?t=${Date.now()}`;
+  }
+  const refresh = () => { refreshScreen(); return call(stateApi).then(showState, stateFailed); };
+  for (const name of ['prev', 'pause', 'next']) {
+    document.getElementById(name).onclick = () =>
+      call(commandApi, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: name }),
+      }).then((st) => { showState(st); refreshScreen(); }, stateFailed);
+  }
+  refresh();
+  setInterval(refresh, 1000);
 
   fetch(api)
     .then((res) => res.json())
