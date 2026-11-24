@@ -30,8 +30,11 @@
   .now .controls button { min-width: 44px; font-size: 17px; }
   .now .what { min-width: 0; flex: 1; }
   .now .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .now .meta { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .now .meta { display: flex; gap: 6px; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .now .meta.bad { color: var(--bad); }
+  .now .meta a { color: var(--accent); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .now .meta a::before { content: "·"; display: inline-block; margin-right: 6px; color: var(--muted); }
+  .now .meta.bad a { display: none; }
   .screen { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #000; border-radius: 8px 8px 0 0; border: 1px solid var(--line); border-bottom: 0; }
   .screen + .now { border-radius: 0 0 8px 8px; }
   #status.bad { color: var(--bad); }
@@ -55,7 +58,7 @@
     </span>
     <div class="what">
       <div class="title" id="now-title"></div>
-      <div class="meta" id="now-meta" role="status"></div>
+      <div class="meta" id="now-meta"><span id="now-text" role="status"></span><a id="now-link" target="_blank" rel="noopener noreferrer" title="Open in a new tab"></a></div>
     </div>
   </section>
   <p class="lead">The pages the screen rotates through, in order, each for its seconds. Saving applies the list at once.</p>
@@ -147,18 +150,22 @@
 
   const nowTitle = document.getElementById('now-title');
   const nowMeta = document.getElementById('now-meta');
+  const nowText = document.getElementById('now-text');
+  const nowLink = document.getElementById('now-link');
   const pauseButton = document.getElementById('pause');
 
   function showState(st) {
     nowTitle.textContent = st.title || st.url;
     nowTitle.title = st.url;
     const left = Math.ceil(st.remainingMs / 1000);
-    nowMeta.textContent = `${st.index + 1} of ${st.count} · ${st.paused ? `paused, ${left}s left` : `${left}s left`}`;
+    nowText.textContent = `${st.index + 1} of ${st.count} · ${st.paused ? `paused, ${left}s left` : `${left}s left`}`;
     nowMeta.className = 'meta';
+    // The app only accepts http(s) URLs, so the link cannot run script.
+    if (nowLink.getAttribute('href') !== st.url) { nowLink.href = st.url; nowLink.textContent = st.url; }
     pauseButton.textContent = st.paused ? '▶' : '⏸';
     pauseButton.title = pauseButton.ariaLabel = st.paused ? 'Resume' : 'Pause';
   }
-  const stateFailed = (err) => { nowMeta.textContent = `Screen not reachable: ${err.message}`; nowMeta.className = 'meta bad'; };
+  const stateFailed = (err) => { nowText.textContent = `Screen not reachable: ${err.message}`; nowMeta.className = 'meta bad'; };
 
   async function call(url, init) {
     const res = await fetch(url, init);

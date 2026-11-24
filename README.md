@@ -37,8 +37,8 @@ message naming the offending field.
 ### The web page
 
 The app serves a page that shows the screen and edits the list. At the top, a
-live view of the page on screen (refreshed every second), its title and
-remaining time, and the same previous, pause and next buttons as the control
+live view of the page on screen (refreshed every second), its title,
+remaining time and a link to open it in a new tab, and the same previous, pause and next buttons as the control
 bar; using them also brings the bar up on the screen. Below, the list: add,
 remove and reorder pages and change their seconds. Saving applies the list at once — pages still in it keep
 running without a reload — and writes it back to the config file, so the file
